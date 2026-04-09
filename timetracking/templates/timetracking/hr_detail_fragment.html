@@ -1,0 +1,52 @@
+{% load static %}
+<div class="detail-wrapper">
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <div>
+            <strong>{{ employee.full_name }}</strong> &middot;
+            <span class="text-muted">{{ employee.department }}</span>
+            <div class="small text-muted">{{ month_label }}</div>
+        </div>
+        <div class="text-end">
+            <div class="small text-muted">Actual / Target</div>
+            <div><strong>{{ total }} h</strong> / {{ target }} h &middot; Delta <strong>{{ delta }} h</strong></div>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm detail-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Break</th>
+                    <th class="text-end">Net</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                    <tr class="{% if r.weekend %}weekend-row{% endif %}">
+                        <td>{{ r.label }}</td>
+                        {% if r.entry %}
+                            <td>{{ r.entry.start_time|time:"H:i" }}</td>
+                            <td>{{ r.entry.end_time|time:"H:i" }}</td>
+                            <td>{{ r.entry.break_duration }}</td>
+                            <td class="text-end">{{ r.entry.net_hours }} h</td>
+                        {% else %}
+                            <td colspan="4" class="no-entry">No entry</td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex gap-2 justify-content-end mt-2">
+        <button type="button" class="btn btn-outline-primary btn-sm js-send-reminder"
+                data-id="{{ employee.id }}">Send reminder</button>
+        <button type="button" class="btn btn-success btn-sm js-acknowledge"
+                data-id="{{ employee.id }}">
+            {% if review and review.reviewed_by_id %}Re-acknowledge{% else %}Acknowledge{% endif %}
+        </button>
+    </div>
+</div>

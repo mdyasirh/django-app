@@ -1,8 +1,7 @@
-"""URL configuration for the one-click web app."""
-from django.urls import path
-
-from app import views
+from django.contrib import admin
+from django.urls import path, include
 
 urlpatterns = [
-    path("", views.home, name="home"),
+    path("admin/", admin.site.urls),
+    path("", include("timetracking.urls")),
 ]

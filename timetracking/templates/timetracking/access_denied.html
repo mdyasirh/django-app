@@ -1,0 +1,11 @@
+{% extends "timetracking/base.html" %}
+
+{% block title %}Access denied — FitLife Time Tracker{% endblock %}
+
+{% block content %}
+<div class="text-center py-5">
+    <h2>Access denied</h2>
+    <p class="text-muted">HR privileges are required to view this page.</p>
+    <a href="{% url 'home' %}" class="btn btn-primary">Back to my calendar</a>
+</div>
+{% endblock %}

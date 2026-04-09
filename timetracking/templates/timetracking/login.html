@@ -1,0 +1,44 @@
+{% extends "timetracking/base.html" %}
+{% load static %}
+
+{% block title %}Log in — FitLife Time Tracker{% endblock %}
+
+{% block content %}
+<div class="login-wrapper">
+    <div class="login-card">
+        <div class="text-center mb-4">
+            <div class="fitlife-logo-lg">FitLife</div>
+            <div class="text-muted">Time Tracker</div>
+        </div>
+
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger py-2">
+                Invalid credentials. Please try again.
+            </div>
+        {% endif %}
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="id_username" class="form-label">Employee ID</label>
+                <input type="text" name="username" id="id_username" class="form-control {% if form.non_field_errors %}is-invalid{% endif %}" autofocus required>
+            </div>
+            <div class="mb-4">
+                <label for="id_password" class="form-label">Password</label>
+                <input type="password" name="password" id="id_password" class="form-control {% if form.non_field_errors %}is-invalid{% endif %}" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Log in</button>
+        </form>
+
+        <div class="demo-credentials mt-4">
+            <div class="small text-muted mb-2"><strong>Demo accounts</strong></div>
+            <div class="small">
+                <div>Employee: <code>lisa.schmidt</code> / <code>fitlife2026</code></div>
+                <div>Employee: <code>tom.fischer</code> / <code>fitlife2026</code></div>
+                <div>Employee: <code>klara.neumann</code> / <code>fitlife2026</code></div>
+                <div>HR: <code>julia.braun</code> / <code>fitlife2026</code></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
