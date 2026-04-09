@@ -1,0 +1,121 @@
+{% extends "timetracking/base.html" %}
+{% load static %}
+
+{% block title %}My Week — FitLife Time Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap align-items-center mb-3">
+    <div>
+        <h3 class="mb-0">Hi, {{ employee.full_name }}</h3>
+        <div class="text-muted small">{{ employee.department }} &middot; Monthly target: {{ employee.target_hours }}h</div>
+    </div>
+    <div class="text-end">
+        <div class="text-muted small">Week total</div>
+        <div class="h4 mb-0">{{ week_total }} h</div>
+    </div>
+</div>
+
+<div id="offline-banner" class="alert alert-warning py-2 d-none">
+    You are offline. Entries will be saved locally and sync automatically when you reconnect.
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="btn-group">
+            <a class="btn btn-outline-secondary btn-sm" href="?year={{ prev_year }}&week={{ prev_week }}">&laquo; Previous</a>
+            <span class="btn btn-light btn-sm disabled">
+                Week {{ week_num }} &middot; {{ range_label }}
+            </span>
+            <a class="btn btn-outline-secondary btn-sm" href="?year={{ next_year }}&week={{ next_week }}">Next &raquo;</a>
+        </div>
+        <div class="text-muted small">Click any day to edit your hours</div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table calendar-table mb-0">
+            <thead>
+                <tr>
+                    {% for day in days %}
+                        <th class="{% if day.is_today %}today{% endif %}">
+                            <div class="day-label">{{ day.label }}</div>
+                            <div class="day-date">{{ day.day_num }} {{ day.month_name }}</div>
+                        </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    {% for day in days %}
+                        <td class="day-cell {% if day.is_today %}today{% endif %}"
+                            data-date="{{ day.iso }}"
+                            data-start="{{ day.start }}"
+                            data-end="{{ day.end }}"
+                            data-break="{{ day.break_minutes }}"
+                            data-net="{{ day.net }}">
+                            {% if day.entry %}
+                                <div class="entry-view">
+                                    <div class="entry-net">{{ day.entry.net_hours }} h</div>
+                                    <div class="entry-range">{{ day.start }} – {{ day.end }}</div>
+                                    <div class="entry-break text-muted small">Break {{ day.break_minutes }}m</div>
+                                </div>
+                            {% else %}
+                                <div class="entry-empty text-muted">
+                                    <div class="plus">+</div>
+                                    <div class="small">Add</div>
+                                </div>
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Edit modal -->
+<div class="modal fade" id="entryModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Log working hours — <span id="entry-date-label"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="entry-form" novalidate>
+                    <input type="hidden" id="entry-date">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label">Start time</label>
+                            <input type="time" id="entry-start" class="form-control" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">End time</label>
+                            <input type="time" id="entry-end" class="form-control" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Break (minutes)</label>
+                            <input type="number" id="entry-break" class="form-control" min="0" step="5" value="0" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Net hours</label>
+                            <div id="entry-net" class="form-control-plaintext h5 mb-0">0.00 h</div>
+                        </div>
+                    </div>
+                    <div id="entry-error" class="alert alert-danger mt-3 py-2 d-none"></div>
+                </form>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <button type="button" id="entry-delete" class="btn btn-outline-danger">Delete</button>
+                <div>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" id="entry-save" class="btn btn-primary">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'timetracking/js/calendar.js' %}"></script>
+{% endblock %}
