@@ -1,0 +1,147 @@
+{% extends 'timetracking/base.html' %}
+
+{% block title %}My Day — FitLife Studio{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <!-- Left: punch clock -->
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body text-center">
+        <div class="text-muted small" data-en="Today" data-de="Heute">Today</div>
+        <h4 class="fw-bold mb-1">{{ today_label }}</h4>
+        <div class="fs-5 mb-3">
+          <span data-en="Hello, " data-de="Hallo, ">Hello, </span>
+          <strong>{{ employee.full_name }}</strong>
+          <span class="text-muted">· {{ employee.department }}</span>
+        </div>
+
+        {# ── HR reminders (sync: HR → Employee) ── #}
+        {% for rv in reminders %}
+        <div class="alert alert-info text-start d-flex justify-content-between align-items-start mb-2">
+          <div>
+            <strong data-en="HR reminder" data-de="HR-Erinnerung">HR reminder</strong> — {{ rv.updated_at|date:"d M Y" }}
+            <div class="small mt-1">{{ rv.reminder_message|default:"Please review your hours."|linebreaksbr }}</div>
+          </div>
+          <form method="post" action="{% url 'dismiss_reminder' rv.id %}" class="ms-2 m-0">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-secondary" data-en="Dismiss" data-de="Schließen">Dismiss</button>
+          </form>
+        </div>
+        {% endfor %}
+
+        {# ── State A: Not clocked in ── #}
+        {% if state == 'NONE' %}
+        <div class="badge bg-secondary fs-6 mb-3" data-en="Not clocked in" data-de="Nicht eingestempelt">Not clocked in</div>
+        <form method="post" action="{% url 'clock_in' %}">{% csrf_token %}
+          <button class="btn btn-success btn-huge" data-en="Start" data-de="Beginn">Start</button>
+        </form>
+
+        {# ── State B/D: Working ── #}
+        {% elif state == 'WORKING' %}
+        <div class="badge bg-success fs-6 mb-3" data-en="Currently working" data-de="Arbeitet gerade">Currently working</div>
+        <div class="mb-2 fs-5">
+          <span data-en="Clocked in at" data-de="Eingestempelt um">Clocked in at</span>
+          <strong>{{ record.clock_in|time:"H:i" }}</strong>
+        </div>
+        {% if record.break_end %}
+        <div class="text-muted small mb-3">
+          <span data-en="Break ended. Duration:" data-de="Pause beendet. Dauer:">Break ended. Duration:</span>
+          {{ record.break_duration_minutes }} min
+        </div>
+        {% endif %}
+        <div class="d-flex gap-2 justify-content-center flex-wrap">
+          {% if not record.break_start %}
+          <form method="post" action="{% url 'break_start' %}" class="m-0">{% csrf_token %}
+            <button class="btn btn-warning btn-lg" data-en="Break" data-de="Pause">Break</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{% url 'clock_out' %}" class="m-0">{% csrf_token %}
+            <button class="btn btn-danger btn-lg" data-en="Stop" data-de="Ende">Stop</button>
+          </form>
+        </div>
+
+        {# ── State C: On break ── #}
+        {% elif state == 'ON_BREAK' %}
+        <div class="badge bg-warning text-dark fs-6 mb-3" data-en="On break" data-de="In der Pause">On break</div>
+        <div class="mb-3 fs-5">
+          <span data-en="Break started at" data-de="Pause begonnen um">Break started at</span>
+          <strong>{{ record.break_start|time:"H:i" }}</strong>
+        </div>
+        <form method="post" action="{% url 'resume' %}">{% csrf_token %}
+          <button class="btn btn-primary btn-huge" data-en="Resume" data-de="Weiter">Resume</button>
+        </form>
+
+        {# ── State E: Clocked out ── #}
+        {% elif state == 'CLOCKED_OUT' %}
+        <div class="alert alert-success" data-en="Hours saved successfully" data-de="Stunden erfolgreich gespeichert">Hours saved successfully</div>
+        <table class="table table-sm w-auto mx-auto text-start">
+          <tr><th class="text-end pe-3" data-en="Start" data-de="Beginn">Start</th><td>{{ record.clock_in|time:"H:i" }}</td></tr>
+          <tr><th class="text-end pe-3" data-en="End" data-de="Ende">End</th><td>{{ record.clock_out|time:"H:i" }}</td></tr>
+          <tr><th class="text-end pe-3" data-en="Break" data-de="Pause">Break</th><td>{{ record.break_duration_minutes }} min</td></tr>
+          <tr><th class="text-end pe-3" data-en="Net hours" data-de="Netto-Stunden">Net hours</th><td><strong>{{ record.net_hours }} h</strong></td></tr>
+        </table>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: weekly overview -->
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between">
+        <strong data-en="Weekly overview" data-de="Wochenübersicht">Weekly overview</strong>
+        <span class="text-muted small"><span data-en="Total" data-de="Gesamt">Total</span>: {{ week_total }} h</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th data-en="Day" data-de="Tag">Day</th>
+              <th data-en="In" data-de="Ein">In</th>
+              <th data-en="Out" data-de="Aus">Out</th>
+              <th data-en="Break" data-de="Pause">Break</th>
+              <th class="text-end" data-en="Net" data-de="Netto">Net</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in week_rows %}
+            <tr {% if row.is_today %}class="table-info"{% endif %}>
+              <td>{{ row.label }}</td>
+              {% if row.record and row.record.clock_in %}
+              <td>{{ row.record.clock_in|time:"H:i" }}</td>
+              {% if row.record.clock_out %}
+              <td>{{ row.record.clock_out|time:"H:i" }}</td>
+              {% else %}
+              <td>
+                {% if row.incomplete %}
+                <span class="badge bg-warning text-dark" data-en="No clock-out" data-de="Kein Ausstempeln">No clock-out</span>
+                {% else %}—{% endif %}
+              </td>
+              {% endif %}
+              <td>{{ row.record.break_duration_minutes }}m</td>
+              <td class="text-end">{{ row.record.net_hours }}</td>
+              {% else %}
+              <td colspan="4" class="text-muted small" data-en="No entry" data-de="Kein Eintrag">No entry</td>
+              {% endif %}
+            </tr>
+            {% if row.incomplete %}
+            <tr>
+              <td colspan="5" class="bg-light">
+                <form method="post" action="{% url 'correction' row.record.id %}" class="d-flex gap-2 align-items-center flex-wrap m-0">
+                  {% csrf_token %}
+                  <small data-en="Submit correction:" data-de="Korrektur einreichen:">Submit correction:</small>
+                  <input type="time" name="proposed_clock_out" class="form-control form-control-sm" style="max-width:130px;" required>
+                  <button class="btn btn-sm btn-outline-primary" data-en="Send" data-de="Senden">Send</button>
+                </form>
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

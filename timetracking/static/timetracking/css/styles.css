@@ -163,6 +163,36 @@ main {
     line-height: 1;
 }
 
+/* Inline editor inside a calendar cell */
+.cell-editor {
+    text-align: left;
+}
+.cell-editor .form-control-sm {
+    font-size: 0.82rem;
+    padding: 2px 6px;
+}
+.cell-editor .form-label {
+    font-size: 0.7rem;
+    margin-bottom: 1px;
+}
+.cell-editor .invalid-feedback {
+    display: block;
+    font-size: 0.72rem;
+}
+.cell-editor .is-invalid {
+    border-color: var(--fl-danger);
+    box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.2);
+}
+.cell-editor .net-preview {
+    font-size: 0.85rem;
+}
+
+/* Prevent the calendar cell from trying to open a new editor when
+   the user clicks inside an existing one */
+.day-cell .cell-editor * {
+    cursor: auto;
+}
+
 /* ===== HR Dashboard ===== */
 .summary-card {
     background: #fff;
@@ -201,6 +231,30 @@ main {
 .detail-row .detail-cell {
     background: #fafbfd;
     padding: 16px 20px;
+}
+
+/* Bootstrap collapse rows: ensure the row hides cleanly before and after
+   opening without breaking the table layout */
+tr.detail-collapse {
+    display: none;
+}
+tr.detail-collapse.show,
+tr.detail-collapse.collapsing {
+    display: table-row;
+}
+tr.detail-collapse > td {
+    padding: 0 !important;
+}
+tr.detail-collapse.show > td {
+    padding: 16px 20px !important;
+}
+tr.detail-collapse.collapsing > td {
+    padding: 16px 20px !important;
+}
+
+/* Logout button always clearly visible */
+.logout-btn {
+    font-weight: 600;
 }
 .detail-table th {
     background: #f4f6fb;

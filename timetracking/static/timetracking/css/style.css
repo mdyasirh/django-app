@@ -1,0 +1,82 @@
+/* FitLife Studio — single stylesheet (<150 lines) */
+body {
+    background: #f7f8fb;
+    color: #1f1f2e;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    min-height: 100vh;
+}
+main { min-height: calc(100vh - 120px); }
+
+/* Login */
+.login-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 32px 28px;
+    width: 100%;
+    max-width: 420px;
+}
+.pin-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+.pin-pad .pin-key { font-weight: 600; font-size: 1.1rem; }
+.pin-pad .pin-clear { grid-column: span 2; }
+
+/* Big action buttons */
+.btn-huge {
+    font-size: 1.4rem;
+    padding: 20px 48px;
+    border-radius: 12px;
+    min-width: 200px;
+}
+
+/* Summary cards (HR dashboard) */
+.summary-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 16px;
+}
+.summary-label {
+    color: #6b7280;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.summary-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1e3a8a;
+}
+
+/* Detail table (HR day-by-day) */
+.detail-table th {
+    background: #f3f4f6;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #6b7280;
+}
+
+/* Bootstrap collapse in table rows */
+tr.detail-collapse { display: none; }
+tr.detail-collapse.show,
+tr.detail-collapse.collapsing { display: table-row; }
+tr.detail-collapse > td { padding: 0 !important; }
+tr.detail-collapse.show > td,
+tr.detail-collapse.collapsing > td { padding: 16px 20px !important; }
+
+/* Language toggle active state */
+.lang-btn.active {
+    background: #1e3a8a;
+    color: #fff;
+    border-color: #1e3a8a;
+}
+
+/* Responsive */
+@media (max-width: 576px) {
+    .btn-huge { padding: 16px 32px; font-size: 1.2rem; min-width: 160px; }
+    .summary-value { font-size: 1.2rem; }
+}

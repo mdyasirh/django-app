@@ -1,503 +1,363 @@
 import csv
-import json
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Sum
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_POST
 
-from .models import AuditLog, Employee, MonthLock, MonthReview, TimeEntry
+from .models import CorrectionRequest, DailyTimeRecord, Employee, HRReview
 
 
-# ---------- Helpers ----------
+# ── helpers ──────────────────────────────────────────────────────────────
 
-def _get_employee(user):
+def _emp(user):
     return getattr(user, "employee", None)
 
 
 def _is_hr(user):
-    emp = _get_employee(user)
+    emp = _emp(user)
     return bool(emp and emp.is_hr)
 
 
-def _iso_week_dates(year: int, week: int):
-    """Return the 7 dates (Mon–Sun) for the given ISO year/week."""
-    monday = date.fromisocalendar(year, week, 1)
-    return [monday + timedelta(days=i) for i in range(7)]
-
-
-def _parse_int(value, default):
+def _parse_int(v, default):
     try:
-        return int(value)
+        return int(v)
     except (TypeError, ValueError):
         return default
 
 
-# ---------- Employee views ----------
+def _prev_month(today):
+    first = today.replace(day=1)
+    prev = first - timedelta(days=1)
+    return prev.year, prev.month
+
+
+def _week_dates(ref):
+    mon = ref - timedelta(days=ref.weekday())
+    return [mon + timedelta(days=i) for i in range(7)]
+
+
+def _now():
+    return timezone.localtime().time().replace(microsecond=0)
+
+
+# ── auth / routing ───────────────────────────────────────────────────────
 
 @login_required
 def home(request):
-    emp = _get_employee(request.user)
-    if emp and emp.is_hr:
+    if _is_hr(request.user):
         return redirect("hr_dashboard")
-    return redirect("weekly_calendar")
+    return redirect("employee_dashboard")
 
+
+# ── employee punch-clock ─────────────────────────────────────────────────
 
 @login_required
-def weekly_calendar_view(request):
-    emp = _get_employee(request.user)
+def employee_dashboard(request):
+    emp = _emp(request.user)
     if emp is None:
         return redirect("login")
     if emp.is_hr:
         return redirect("hr_dashboard")
 
     today = timezone.localdate()
-    iso = today.isocalendar()
-    year = _parse_int(request.GET.get("year"), iso.year)
-    week = _parse_int(request.GET.get("week"), iso.week)
+    rec = DailyTimeRecord.objects.filter(employee=emp, date=today).first()
 
-    try:
-        week_dates = _iso_week_dates(year, week)
-    except ValueError:
-        week_dates = _iso_week_dates(iso.year, iso.week)
-        year, week = iso.year, iso.week
+    if rec is None:
+        state = "NONE"
+    elif rec.status == DailyTimeRecord.STATUS_ON_BREAK:
+        state = "ON_BREAK"
+    elif rec.status == DailyTimeRecord.STATUS_CLOCKED_OUT and rec.clock_out:
+        state = "CLOCKED_OUT"
+    elif rec.clock_in and not rec.clock_out:
+        state = "WORKING"
+    else:
+        state = "NONE"
 
-    entries_qs = TimeEntry.objects.filter(
-        employee=emp, date__in=week_dates
-    )
-    entries_by_date = {e.date: e for e in entries_qs}
-
-    days = []
-    for d in week_dates:
-        entry = entries_by_date.get(d)
-        days.append(
-            {
-                "date": d,
-                "iso": d.isoformat(),
-                "label": d.strftime("%a"),
-                "day_num": d.day,
-                "month_name": d.strftime("%b"),
-                "is_today": d == today,
-                "entry": entry,
-                "start": entry.start_time.strftime("%H:%M") if entry else "",
-                "end": entry.end_time.strftime("%H:%M") if entry else "",
-                "break_minutes": int(entry.break_duration.total_seconds() // 60) if entry else 0,
-                "net": f"{entry.net_hours}" if entry else "",
-            }
+    # weekly overview
+    week = _week_dates(today)
+    recs = {
+        r.date: r
+        for r in DailyTimeRecord.objects.filter(
+            employee=emp, date__gte=week[0], date__lte=week[-1]
         )
-
-    # Previous / next week for navigation
-    monday = week_dates[0]
-    prev_monday = monday - timedelta(days=7)
-    next_monday = monday + timedelta(days=7)
-    prev_iso = prev_monday.isocalendar()
-    next_iso = next_monday.isocalendar()
-
-    week_total = sum((d["entry"].net_hours for d in days if d["entry"]), Decimal("0"))
-
-    context = {
-        "days": days,
-        "week_num": week,
-        "year": year,
-        "range_label": f"{week_dates[0].strftime('%d %b')} – {week_dates[-1].strftime('%d %b %Y')}",
-        "prev_year": prev_iso.year,
-        "prev_week": prev_iso.week,
-        "next_year": next_iso.year,
-        "next_week": next_iso.week,
-        "employee": emp,
-        "week_total": week_total,
     }
-    return render(request, "timetracking/weekly_calendar.html", context)
+    week_rows = []
+    week_total = Decimal("0.00")
+    for d in week:
+        r = recs.get(d)
+        incomplete = bool(r and r.clock_in and not r.clock_out and d < today)
+        if r:
+            week_total += r.net_hours
+        week_rows.append(
+            {"date": d, "label": d.strftime("%a %d %b"), "record": r,
+             "incomplete": incomplete, "is_today": d == today}
+        )
+
+    # HR reminders visible to this employee (sync: HR→Employee)
+    reminders = HRReview.objects.filter(
+        employee=emp, status=HRReview.STATUS_REMINDER_SENT, reminder_seen=False
+    ).order_by("-updated_at")
+
+    return render(request, "timetracking/employee.html", {
+        "employee": emp, "today": today,
+        "today_label": today.strftime("%A, %d %B %Y"),
+        "record": rec, "state": state,
+        "week_rows": week_rows,
+        "week_total": week_total.quantize(Decimal("0.01")),
+        "reminders": reminders,
+    })
 
 
 @login_required
 @require_POST
-def save_time_entry(request):
-    emp = _get_employee(request.user)
-    if emp is None or emp.is_hr:
-        return JsonResponse({"error": "Not allowed."}, status=403)
-
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON."}, status=400)
-
-    date_str = payload.get("date")
-    start_str = payload.get("start_time")
-    end_str = payload.get("end_time")
-    break_minutes = payload.get("break_minutes", 0)
-
-    try:
-        entry_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        start_time = datetime.strptime(start_str, "%H:%M").time()
-        end_time = datetime.strptime(end_str, "%H:%M").time()
-        break_minutes = int(break_minutes)
-    except (TypeError, ValueError):
-        return JsonResponse(
-            {"error": "Please enter valid values (HH:MM, minutes)."}, status=400
-        )
-
-    if end_time <= start_time:
-        return JsonResponse(
-            {"error": "End time cannot be before or equal to start time."}, status=400
-        )
-
-    shift_minutes = (
-        datetime.combine(entry_date, end_time)
-        - datetime.combine(entry_date, start_time)
-    ).total_seconds() / 60
-
-    if break_minutes < 0 or break_minutes >= shift_minutes:
-        return JsonResponse(
-            {"error": "Break duration exceeds total shift length."}, status=400
-        )
-
-    if MonthLock.objects.filter(year=entry_date.year, month=entry_date.month).exists():
-        return JsonResponse({"error": "Month has been finalised."}, status=403)
-
-    entry, created = TimeEntry.objects.update_or_create(
-        employee=emp,
-        date=entry_date,
-        defaults={
-            "start_time": start_time,
-            "end_time": end_time,
-            "break_duration": timedelta(minutes=break_minutes),
-        },
+def clock_in(request):
+    emp = _emp(request.user)
+    if not emp or emp.is_hr:
+        return redirect("home")
+    today = timezone.localdate()
+    rec, created = DailyTimeRecord.objects.get_or_create(
+        employee=emp, date=today,
+        defaults={"clock_in": _now(), "status": DailyTimeRecord.STATUS_WORKING},
     )
-
-    return JsonResponse(
-        {
-            "net_hours": str(entry.net_hours),
-            "message": "Hours saved successfully.",
-            "created": created,
-        }
-    )
+    if not created and not rec.clock_in:
+        rec.clock_in = _now()
+        rec.status = DailyTimeRecord.STATUS_WORKING
+        rec.save()
+    return redirect("employee_dashboard")
 
 
 @login_required
 @require_POST
-def delete_time_entry(request):
-    emp = _get_employee(request.user)
-    if emp is None or emp.is_hr:
-        return JsonResponse({"error": "Not allowed."}, status=403)
+def break_start(request):
+    emp = _emp(request.user)
+    if not emp or emp.is_hr:
+        return redirect("home")
+    today = timezone.localdate()
+    rec = DailyTimeRecord.objects.filter(employee=emp, date=today).first()
+    if rec and rec.status == DailyTimeRecord.STATUS_WORKING:
+        rec.break_start = _now()
+        rec.status = DailyTimeRecord.STATUS_ON_BREAK
+        rec.save()
+    return redirect("employee_dashboard")
 
+
+@login_required
+@require_POST
+def resume(request):
+    emp = _emp(request.user)
+    if not emp or emp.is_hr:
+        return redirect("home")
+    today = timezone.localdate()
+    rec = DailyTimeRecord.objects.filter(employee=emp, date=today).first()
+    if rec and rec.status == DailyTimeRecord.STATUS_ON_BREAK and rec.break_start:
+        rec.break_end = _now()
+        rec.status = DailyTimeRecord.STATUS_WORKING
+        rec.save()
+    return redirect("employee_dashboard")
+
+
+@login_required
+@require_POST
+def clock_out(request):
+    emp = _emp(request.user)
+    if not emp or emp.is_hr:
+        return redirect("home")
+    today = timezone.localdate()
+    rec = DailyTimeRecord.objects.filter(employee=emp, date=today).first()
+    if rec and rec.clock_in and not rec.clock_out:
+        # auto-close open break
+        if rec.status == DailyTimeRecord.STATUS_ON_BREAK and rec.break_start and not rec.break_end:
+            rec.break_end = _now()
+        rec.clock_out = _now()
+        rec.status = DailyTimeRecord.STATUS_CLOCKED_OUT
+        rec.save()
+        messages.success(request, "Hours saved successfully")
+    return redirect("employee_dashboard")
+
+
+@login_required
+@require_POST
+def correction(request, record_id):
+    emp = _emp(request.user)
+    if not emp or emp.is_hr:
+        return redirect("home")
+    rec = get_object_or_404(DailyTimeRecord, pk=record_id, employee=emp)
+    proposed = request.POST.get("proposed_clock_out", "")
     try:
-        payload = json.loads(request.body.decode("utf-8"))
-        entry_date = datetime.strptime(payload.get("date"), "%Y-%m-%d").date()
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return JsonResponse({"error": "Invalid request."}, status=400)
-
-    if MonthLock.objects.filter(year=entry_date.year, month=entry_date.month).exists():
-        return JsonResponse({"error": "Month has been finalised."}, status=403)
-
-    TimeEntry.objects.filter(employee=emp, date=entry_date).delete()
-    return JsonResponse({"message": "Entry deleted."})
+        t = datetime.strptime(proposed, "%H:%M").time()
+    except ValueError:
+        messages.warning(request, "Invalid time format.")
+        return redirect("employee_dashboard")
+    CorrectionRequest.objects.create(entry=rec, proposed_clock_out=t)
+    messages.success(request, "Correction submitted for HR review.")
+    return redirect("employee_dashboard")
 
 
-# ---------- HR views ----------
+@login_required
+@require_POST
+def dismiss_reminder(request, review_id):
+    emp = _emp(request.user)
+    if not emp:
+        return redirect("home")
+    rv = get_object_or_404(HRReview, pk=review_id, employee=emp)
+    rv.reminder_seen = True
+    rv.save(update_fields=["reminder_seen"])
+    return redirect("employee_dashboard")
 
-def _previous_month(today):
-    first_of_month = today.replace(day=1)
-    prev = first_of_month - timedelta(days=1)
-    return prev.year, prev.month
 
-
-def _hr_guard(request):
-    emp = _get_employee(request.user)
-    if emp is None or not emp.is_hr:
-        return False
-    return True
-
+# ── HR dashboard ─────────────────────────────────────────────────────────
 
 @login_required
 def hr_dashboard(request):
-    if not _hr_guard(request):
-        return render(
-            request,
-            "timetracking/access_denied.html",
-            status=403,
-        )
+    if not _is_hr(request.user):
+        return render(request, "timetracking/access_denied.html", status=403)
 
     today = timezone.localdate()
-    default_year, default_month = _previous_month(today)
-    year = _parse_int(request.GET.get("year"), default_year)
-    month = _parse_int(request.GET.get("month"), default_month)
+    dy, dm = _prev_month(today)
+    year = _parse_int(request.GET.get("year"), dy)
+    month = _parse_int(request.GET.get("month"), dm)
+    if not 1 <= month <= 12:
+        year, month = dy, dm
 
-    if not (1 <= month <= 12):
-        month = default_month
-        year = default_year
-
-    start_of_month = date(year, month, 1)
+    first = date(year, month, 1)
     last_day = monthrange(year, month)[1]
-    end_of_month = date(year, month, last_day)
+    last = date(year, month, last_day)
+    prev_d = first - timedelta(days=1)
+    next_d = last + timedelta(days=1)
 
     employees = Employee.objects.filter(role="employee").select_related("user")
     rows = []
-    departments = set()
     for emp in employees:
-        actual = (
-            TimeEntry.objects.filter(
-                employee=emp, date__gte=start_of_month, date__lte=end_of_month
-            ).aggregate(total=Sum("net_hours"))["total"]
-            or Decimal("0")
-        )
-        target = emp.target_hours or Decimal("0")
+        recs = list(DailyTimeRecord.objects.filter(
+            employee=emp, date__gte=first, date__lte=last
+        ))
+        by_date = {r.date: r for r in recs}
+        actual = sum((r.net_hours for r in recs), Decimal("0.00"))
+        target = emp.target_hours or Decimal("0.00")
         delta = actual - target
 
         if delta < Decimal("-5"):
-            color = "table-danger"
-            badge = "Deficit"
-            badge_cls = "bg-danger"
+            row_cls, badge, badge_cls = "table-danger", "Deficit", "bg-danger"
         elif delta > Decimal("5"):
-            color = "table-warning"
-            badge = "Overtime"
-            badge_cls = "bg-warning text-dark"
+            row_cls, badge, badge_cls = "table-warning", "Overtime", "bg-warning text-dark"
         else:
-            color = ""
-            badge = "On target"
-            badge_cls = "bg-success"
+            row_cls, badge, badge_cls = "", "On target", "bg-success"
 
-        review = MonthReview.objects.filter(
-            employee=emp, year=year, month=month
-        ).first()
+        review = HRReview.objects.filter(employee=emp, year=year, month=month).first()
 
-        rows.append(
-            {
-                "id": emp.id,
-                "name": emp.full_name,
-                "department": emp.department,
-                "target": target,
-                "actual": actual,
-                "delta": delta,
-                "color": color,
-                "badge": badge,
-                "badge_cls": badge_cls,
-                "reviewed": bool(review and review.reviewed_by_id),
-                "reminder_sent": bool(review and review.reminder_sent),
-                "email": emp.user.email,
-            }
-        )
-        departments.add(emp.department)
+        day_rows = []
+        for i in range(last_day):
+            d = first + timedelta(days=i)
+            r = by_date.get(d)
+            if r is None:
+                st = "none"
+            elif r.clock_in and not r.clock_out:
+                st = "incomplete"
+            else:
+                st = "ok"
+            day_rows.append({
+                "date": d, "label": d.strftime("%a %d %b"),
+                "weekend": d.weekday() >= 5, "record": r, "state": st,
+            })
 
-    # Summary for top cards
-    total_target = sum((r["target"] for r in rows), Decimal("0"))
-    total_actual = sum((r["actual"] for r in rows), Decimal("0"))
-    total_delta = total_actual - total_target
-    deficit_count = sum(1 for r in rows if r["delta"] < Decimal("-5"))
-    overtime_count = sum(1 for r in rows if r["delta"] > Decimal("5"))
+        rows.append({
+            "id": emp.id, "name": emp.full_name,
+            "department": emp.department,
+            "target": target.quantize(Decimal("0.01")),
+            "actual": actual.quantize(Decimal("0.01")),
+            "delta": delta.quantize(Decimal("0.01")),
+            "row_cls": row_cls, "badge": badge, "badge_cls": badge_cls,
+            "reviewed": bool(review and review.status == HRReview.STATUS_REVIEWED),
+            "reminder_sent": bool(review and review.status == HRReview.STATUS_REMINDER_SENT),
+            "email": emp.user.email or f"{emp.user.username}@fitlife.de",
+            "day_rows": day_rows,
+        })
 
-    months = [
-        (i, date(2000, i, 1).strftime("%B")) for i in range(1, 13)
-    ]
-    years = sorted({year, today.year, today.year - 1})
+    total_target = sum((r["target"] for r in rows), Decimal("0.00"))
+    total_actual = sum((r["actual"] for r in rows), Decimal("0.00"))
 
-    context = {
+    return render(request, "timetracking/hr_dashboard.html", {
         "rows": rows,
-        "selected_month": month,
-        "selected_year": year,
-        "month_label": start_of_month.strftime("%B %Y"),
-        "months": months,
-        "years": years,
-        "departments": sorted(departments),
-        "total_target": total_target,
-        "total_actual": total_actual,
-        "total_delta": total_delta,
-        "deficit_count": deficit_count,
-        "overtime_count": overtime_count,
+        "selected_month": month, "selected_year": year,
+        "month_label": first.strftime("%B %Y"),
+        "prev_year": prev_d.year, "prev_month": prev_d.month,
+        "next_year": next_d.year, "next_month": next_d.month,
+        "total_target": total_target.quantize(Decimal("0.01")),
+        "total_actual": total_actual.quantize(Decimal("0.01")),
+        "total_delta": (total_actual - total_target).quantize(Decimal("0.01")),
+        "deficit_count": sum(1 for r in rows if r["delta"] < Decimal("-5")),
+        "overtime_count": sum(1 for r in rows if r["delta"] > Decimal("5")),
         "employee_count": len(rows),
-    }
-    return render(request, "timetracking/hr_dashboard.html", context)
-
-
-@login_required
-@require_GET
-def hr_employee_detail(request, employee_id):
-    if not _hr_guard(request):
-        return JsonResponse({"error": "Forbidden"}, status=403)
-
-    employee = get_object_or_404(Employee, pk=employee_id)
-    today = timezone.localdate()
-    default_year, default_month = _previous_month(today)
-    year = _parse_int(request.GET.get("year"), default_year)
-    month = _parse_int(request.GET.get("month"), default_month)
-
-    last_day = monthrange(year, month)[1]
-    start_of_month = date(year, month, 1)
-    end_of_month = date(year, month, last_day)
-
-    entries = {
-        e.date: e
-        for e in TimeEntry.objects.filter(
-            employee=employee, date__gte=start_of_month, date__lte=end_of_month
-        )
-    }
-
-    rows = []
-    total = Decimal("0")
-    for day_num in range(1, last_day + 1):
-        d = date(year, month, day_num)
-        entry = entries.get(d)
-        if entry:
-            total += entry.net_hours
-        rows.append(
-            {
-                "date": d,
-                "label": d.strftime("%a %d %b"),
-                "entry": entry,
-                "weekend": d.weekday() >= 5,
-            }
-        )
-
-    review = MonthReview.objects.filter(
-        employee=employee, year=year, month=month
-    ).first()
-
-    # Log view action
-    AuditLog.objects.create(
-        user=request.user,
-        action=f"Viewed detail: {employee.full_name} — {start_of_month:%B %Y}",
-    )
-
-    context = {
-        "employee": employee,
-        "rows": rows,
-        "year": year,
-        "month": month,
-        "month_label": start_of_month.strftime("%B %Y"),
-        "total": total,
-        "target": employee.target_hours,
-        "delta": total - employee.target_hours,
-        "review": review,
-    }
-    return render(request, "timetracking/hr_detail_fragment.html", context)
+    })
 
 
 @login_required
 @require_POST
 def hr_acknowledge(request, employee_id):
-    if not _hr_guard(request):
-        return JsonResponse({"error": "Forbidden"}, status=403)
-
-    employee = get_object_or_404(Employee, pk=employee_id)
-    try:
-        payload = json.loads(request.body.decode("utf-8") or "{}")
-    except json.JSONDecodeError:
-        payload = {}
-
-    today = timezone.localdate()
-    default_year, default_month = _previous_month(today)
-    year = _parse_int(payload.get("year"), default_year)
-    month = _parse_int(payload.get("month"), default_month)
-
-    review, _ = MonthReview.objects.update_or_create(
-        employee=employee,
-        year=year,
-        month=month,
-        defaults={"reviewed_by": request.user},
+    if not _is_hr(request.user):
+        return render(request, "timetracking/access_denied.html", status=403)
+    emp = get_object_or_404(Employee, pk=employee_id)
+    year = _parse_int(request.POST.get("year"), 0)
+    month = _parse_int(request.POST.get("month"), 0)
+    HRReview.objects.update_or_create(
+        employee=emp, year=year, month=month,
+        defaults={"status": HRReview.STATUS_REVIEWED},
     )
-
-    AuditLog.objects.create(
-        user=request.user,
-        action=f"Acknowledged {employee.full_name} — {year}-{month:02d}",
-    )
-
-    return JsonResponse(
-        {
-            "status": "reviewed",
-            "reviewed_by": request.user.get_full_name() or request.user.username,
-        }
-    )
+    messages.success(request, f"{emp.full_name} — Reviewed ✓")
+    return redirect(f"/hr/?year={year}&month={month}")
 
 
 @login_required
 @require_POST
 def hr_send_reminder(request, employee_id):
-    if not _hr_guard(request):
-        return JsonResponse({"error": "Forbidden"}, status=403)
-
-    employee = get_object_or_404(Employee, pk=employee_id)
-    try:
-        payload = json.loads(request.body.decode("utf-8") or "{}")
-    except json.JSONDecodeError:
-        payload = {}
-
-    today = timezone.localdate()
-    default_year, default_month = _previous_month(today)
-    year = _parse_int(payload.get("year"), default_year)
-    month = _parse_int(payload.get("month"), default_month)
-
-    review, _ = MonthReview.objects.update_or_create(
-        employee=employee,
-        year=year,
-        month=month,
-        defaults={"reminder_sent": True},
+    if not _is_hr(request.user):
+        return render(request, "timetracking/access_denied.html", status=403)
+    emp = get_object_or_404(Employee, pk=employee_id)
+    year = _parse_int(request.POST.get("year"), 0)
+    month = _parse_int(request.POST.get("month"), 0)
+    msg = request.POST.get("message", "").strip()
+    HRReview.objects.update_or_create(
+        employee=emp, year=year, month=month,
+        defaults={"status": HRReview.STATUS_REMINDER_SENT,
+                   "reminder_message": msg, "reminder_seen": False},
     )
-
-    AuditLog.objects.create(
-        user=request.user,
-        action=f"Sent reminder to {employee.full_name} — {year}-{month:02d}",
-    )
-
-    return JsonResponse(
-        {
-            "status": "reminder_sent",
-            "message": f"Reminder sent to {employee.full_name}.",
-        }
-    )
+    messages.success(request, f"Reminder sent to {emp.full_name}.")
+    return redirect(f"/hr/?year={year}&month={month}")
 
 
 @login_required
 def hr_export_csv(request):
-    if not _hr_guard(request):
+    if not _is_hr(request.user):
         return HttpResponse("Forbidden", status=403)
-
     today = timezone.localdate()
-    default_year, default_month = _previous_month(today)
-    year = _parse_int(request.GET.get("year"), default_year)
-    month = _parse_int(request.GET.get("month"), default_month)
-
+    dy, dm = _prev_month(today)
+    year = _parse_int(request.GET.get("year"), dy)
+    month = _parse_int(request.GET.get("month"), dm)
     last_day = monthrange(year, month)[1]
-    start_of_month = date(year, month, 1)
-    end_of_month = date(year, month, last_day)
+    first = date(year, month, 1)
+    last = date(year, month, last_day)
 
-    response = HttpResponse(content_type="text/csv")
-    response["Content-Disposition"] = (
-        f'attachment; filename="timetracking_{year}_{month:02d}.csv"'
-    )
-    writer = csv.writer(response)
-    writer.writerow(
-        ["Employee", "Department", "Target Hours", "Actual Hours", "Delta", "Status"]
-    )
-
-    employees = Employee.objects.filter(role="employee").select_related("user")
-    for emp in employees:
-        actual = (
-            TimeEntry.objects.filter(
-                employee=emp, date__gte=start_of_month, date__lte=end_of_month
-            ).aggregate(total=Sum("net_hours"))["total"]
-            or Decimal("0")
-        )
-        delta = actual - emp.target_hours
-        if delta < Decimal("-5"):
-            status = "Deficit"
-        elif delta > Decimal("5"):
-            status = "Overtime"
-        else:
-            status = "On target"
-        writer.writerow(
-            [emp.full_name, emp.department, emp.target_hours, actual, delta, status]
-        )
-
-    AuditLog.objects.create(
-        user=request.user,
-        action=f"Exported CSV — {year}-{month:02d}",
-    )
-    return response
+    resp = HttpResponse(content_type="text/csv")
+    resp["Content-Disposition"] = f'attachment; filename="fitlife_{year}_{month:02d}.csv"'
+    w = csv.writer(resp)
+    w.writerow(["Employee Name", "Date", "Clock-in", "Clock-out", "Break (min)", "Net Hours"])
+    for emp in Employee.objects.filter(role="employee").select_related("user"):
+        for r in DailyTimeRecord.objects.filter(
+            employee=emp, date__gte=first, date__lte=last
+        ).order_by("date"):
+            w.writerow([
+                emp.full_name, r.date.isoformat(),
+                r.clock_in.strftime("%H:%M") if r.clock_in else "",
+                r.clock_out.strftime("%H:%M") if r.clock_out else "",
+                r.break_duration_minutes, r.net_hours,
+            ])
+    return resp
 
 
 @login_required

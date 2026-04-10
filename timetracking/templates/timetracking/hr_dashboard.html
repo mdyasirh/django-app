@@ -1,119 +1,151 @@
-{% extends "timetracking/base.html" %}
-{% load static %}
+{% extends 'timetracking/base.html' %}
 
-{% block title %}HR Dashboard — FitLife Time Tracker{% endblock %}
+{% block title %}HR Dashboard — FitLife Studio{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center flex-wrap mb-3">
-    <div>
-        <h3 class="mb-0">HR Dashboard</h3>
-        <div class="text-muted small">Target vs. actual &middot; {{ month_label }}</div>
-    </div>
-    <form method="get" class="d-flex gap-2 flex-wrap">
-        <select name="month" class="form-select form-select-sm">
-            {% for m, name in months %}
-                <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ name }}</option>
-            {% endfor %}
-        </select>
-        <select name="year" class="form-select form-select-sm">
-            {% for y in years %}
-                <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-            {% endfor %}
-        </select>
-        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
-        <a href="{% url 'hr_export' %}?month={{ selected_month }}&year={{ selected_year }}" class="btn btn-outline-secondary btn-sm">Export CSV</a>
-    </form>
+<div class="d-flex justify-content-between align-items-center flex-wrap mb-3 gap-2">
+  <div>
+    <h3 class="mb-0" data-en="Monthly overview" data-de="Monatsübersicht">Monthly overview</h3>
+    <div class="text-muted small">{{ month_label }}</div>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <a class="btn btn-sm btn-outline-secondary" href="?year={{ prev_year }}&month={{ prev_month }}">&laquo;</a>
+    <span class="btn btn-sm btn-light disabled">{{ month_label }}</span>
+    <a class="btn btn-sm btn-outline-secondary" href="?year={{ next_year }}&month={{ next_month }}">&raquo;</a>
+    <a class="btn btn-sm btn-primary" href="{% url 'hr_export' %}?year={{ selected_year }}&month={{ selected_month }}"
+       data-en="Export CSV" data-de="CSV exportieren">Export CSV</a>
+  </div>
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-        <div class="summary-card">
-            <div class="summary-label">Employees</div>
-            <div class="summary-value">{{ employee_count }}</div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="summary-card">
-            <div class="summary-label">Total target</div>
-            <div class="summary-value">{{ total_target }} h</div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="summary-card">
-            <div class="summary-label">Total actual</div>
-            <div class="summary-value">{{ total_actual }} h</div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="summary-card">
-            <div class="summary-label">Delta</div>
-            <div class="summary-value">{{ total_delta }} h</div>
-            <div class="small text-muted">{{ deficit_count }} deficit &middot; {{ overtime_count }} overtime</div>
-        </div>
-    </div>
+  <div class="col-6 col-md-3"><div class="summary-card"><div class="summary-label" data-en="Employees" data-de="Mitarbeiter">Employees</div><div class="summary-value">{{ employee_count }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="summary-card"><div class="summary-label" data-en="Total target" data-de="Soll gesamt">Total target</div><div class="summary-value">{{ total_target }} h</div></div></div>
+  <div class="col-6 col-md-3"><div class="summary-card"><div class="summary-label" data-en="Total actual" data-de="Ist gesamt">Total actual</div><div class="summary-value">{{ total_actual }} h</div></div></div>
+  <div class="col-6 col-md-3"><div class="summary-card"><div class="summary-label" data-en="Difference" data-de="Differenz">Difference</div><div class="summary-value">{{ total_delta }} h</div><div class="small text-muted">{{ deficit_count }} <span data-en="deficit" data-de="Defizit">deficit</span> · {{ overtime_count }} <span data-en="overtime" data-de="Überstunden">overtime</span></div></div></div>
 </div>
 
 <div class="card shadow-sm">
-    <div class="card-header d-flex gap-2 flex-wrap">
-        <input type="search" id="search-input" class="form-control form-control-sm" style="max-width: 260px;" placeholder="Search employee…">
-        <select id="dept-filter" class="form-select form-select-sm" style="max-width: 200px;">
-            <option value="">All departments</option>
-            {% for d in departments %}
-                <option value="{{ d }}">{{ d }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="table-responsive">
-        <table class="table mb-0 hr-table" id="hr-table">
-            <thead>
-                <tr>
-                    <th data-sort="name">Name</th>
-                    <th data-sort="department">Department</th>
-                    <th data-sort="target" class="text-end">Target</th>
-                    <th data-sort="actual" class="text-end">Actual</th>
-                    <th data-sort="delta" class="text-end">Delta</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in rows %}
-                    <tr class="employee-row {{ row.color }}"
-                        data-id="{{ row.id }}"
-                        data-name="{{ row.name|lower }}"
-                        data-department="{{ row.department }}"
-                        data-target="{{ row.target }}"
-                        data-actual="{{ row.actual }}"
-                        data-delta="{{ row.delta }}">
-                        <td>
-                            <strong>{{ row.name }}</strong>
-                            {% if row.reviewed %}
-                                <span class="badge bg-success ms-1">Reviewed</span>
-                            {% elif row.reminder_sent %}
-                                <span class="badge bg-primary ms-1">Reminder sent</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ row.department }}</td>
-                        <td class="text-end">{{ row.target }} h</td>
-                        <td class="text-end">{{ row.actual }} h</td>
-                        <td class="text-end"><strong>{{ row.delta }} h</strong></td>
-                        <td><span class="badge {{ row.badge_cls }}">{{ row.badge }}</span></td>
-                    </tr>
-                    <tr class="detail-row d-none" data-detail-for="{{ row.id }}">
-                        <td colspan="6" class="detail-cell"></td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="6" class="text-center text-muted py-4">No employees to show.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th data-en="Name" data-de="Name">Name</th>
+          <th data-en="Department" data-de="Abteilung">Department</th>
+          <th class="text-end" data-en="Target hours" data-de="Soll-Stunden">Target hours</th>
+          <th class="text-end" data-en="Actual hours" data-de="Ist-Stunden">Actual hours</th>
+          <th class="text-end" data-en="Difference" data-de="Differenz">Difference</th>
+          <th data-en="Status" data-de="Status">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="{{ row.row_cls }}" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#detail-{{ row.id }}">
+          <td>
+            <strong>{{ row.name }}</strong>
+            {% if row.reviewed %}<span class="badge bg-success ms-1" data-en="Reviewed" data-de="Überprüft">Reviewed ✓</span>
+            {% elif row.reminder_sent %}<span class="badge bg-primary ms-1" data-en="Reminder sent" data-de="Erinnerung gesendet">Reminder sent</span>{% endif %}
+          </td>
+          <td>{{ row.department }}</td>
+          <td class="text-end">{{ row.target }} h</td>
+          <td class="text-end">{{ row.actual }} h</td>
+          <td class="text-end"><strong>{{ row.delta }} h</strong></td>
+          <td><span class="badge {{ row.badge_cls }}">{{ row.badge }}</span></td>
+        </tr>
+        <tr class="collapse detail-collapse" id="detail-{{ row.id }}">
+          <td colspan="6" class="bg-light p-3">
+            <div class="d-flex justify-content-between flex-wrap mb-2 gap-2">
+              <div><strong>{{ row.name }}</strong> <span class="text-muted">· {{ row.department }}</span>
+                <div class="small text-muted">{{ month_label }} · <span data-en="day-by-day" data-de="tagesweise">day-by-day</span></div></div>
+              <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-warning btn-sm btn-open-reminder"
+                  data-employee-id="{{ row.id }}" data-employee-name="{{ row.name }}" data-employee-email="{{ row.email }}"
+                  data-bs-toggle="modal" data-bs-target="#reminderModal"
+                  data-en="Send reminder" data-de="Erinnerung senden">Send reminder</button>
+                <form method="post" action="{% url 'hr_acknowledge' row.id %}" class="m-0">{% csrf_token %}
+                  <input type="hidden" name="year" value="{{ selected_year }}">
+                  <input type="hidden" name="month" value="{{ selected_month }}">
+                  <button class="btn btn-success btn-sm" data-en="Acknowledge" data-de="Bestätigen">Acknowledge</button>
+                </form>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm detail-table mb-0">
+                <thead><tr>
+                  <th data-en="Date" data-de="Datum">Date</th>
+                  <th data-en="Clock-in" data-de="Beginn">Clock-in</th>
+                  <th data-en="Clock-out" data-de="Ende">Clock-out</th>
+                  <th data-en="Break" data-de="Pause">Break</th>
+                  <th class="text-end" data-en="Net hours" data-de="Netto-Stunden">Net hours</th>
+                </tr></thead>
+                <tbody>
+                  {% for day in row.day_rows %}
+                  <tr class="{% if day.weekend %}table-secondary{% endif %}">
+                    <td>{{ day.label }}</td>
+                    {% if day.state == 'ok' %}
+                    <td>{{ day.record.clock_in|time:"H:i" }}</td>
+                    <td>{{ day.record.clock_out|time:"H:i" }}</td>
+                    <td>{{ day.record.break_duration_minutes }} min</td>
+                    <td class="text-end">{{ day.record.net_hours }} h</td>
+                    {% elif day.state == 'incomplete' %}
+                    <td>{{ day.record.clock_in|time:"H:i" }}</td>
+                    <td colspan="3"><span class="text-warning fw-bold" data-en="Incomplete" data-de="Unvollständig">Incomplete</span></td>
+                    {% else %}
+                    <td colspan="4"><span class="text-danger fw-bold" data-en="No entry" data-de="Kein Eintrag">No entry</span></td>
+                    {% endif %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-4" data-en="No employees." data-de="Keine Mitarbeiter.">No employees.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Reminder modal -->
+<div class="modal fade" id="reminderModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" id="reminderForm">{% csrf_token %}
+      <input type="hidden" name="year" value="{{ selected_year }}">
+      <input type="hidden" name="month" value="{{ selected_month }}">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" data-en="Send reminder" data-de="Erinnerung senden">Send reminder</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3"><label class="form-label" data-en="To" data-de="An">To</label><input type="text" class="form-control" id="reminderTo" disabled></div>
+          <div class="mb-3"><label class="form-label" data-en="Message" data-de="Nachricht">Message</label><textarea class="form-control" rows="6" name="message" id="reminderBody"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-en="Cancel" data-de="Abbrechen">Cancel</button>
+          <button type="submit" class="btn btn-primary" data-en="Send" data-de="Senden">Send</button>
+        </div>
+      </div>
+    </form>
+  </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    window.FITLIFE_MONTH = {{ selected_month }};
-    window.FITLIFE_YEAR = {{ selected_year }};
+(function(){
+  document.addEventListener('click',function(e){
+    var b=e.target.closest('.btn-open-reminder');
+    if(!b)return;
+    e.stopPropagation();
+    document.getElementById('reminderForm').action='/hr/reminder/'+b.dataset.employeeId+'/';
+    document.getElementById('reminderTo').value=b.dataset.employeeEmail||'';
+    document.getElementById('reminderBody').value='Dear '+b.dataset.employeeName+',\n\nPlease clarify your missing time entries for {{ month_label }}.\n\nKind regards,\nHR Team';
+  });
+  document.addEventListener('click',function(e){
+    if(e.target.closest('.detail-collapse button,.detail-collapse form,.detail-collapse input,.detail-collapse textarea'))e.stopPropagation();
+  },true);
+})();
 </script>
-<script src="{% static 'timetracking/js/dashboard.js' %}"></script>
 {% endblock %}

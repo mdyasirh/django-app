@@ -1,40 +1,20 @@
-{% extends "timetracking/base.html" %}
+{% extends 'timetracking/base.html' %}
 
-{% block title %}Privacy Notice — FitLife Time Tracker{% endblock %}
+{% block title %}Privacy — FitLife Studio{% endblock %}
 
 {% block content %}
-<div class="card shadow-sm mx-auto" style="max-width: 820px;">
-    <div class="card-body">
-        <h3>Privacy Notice</h3>
-        <p class="text-muted">How FitLife Time Tracker handles your data under GDPR.</p>
-
-        <h5>Data we collect</h5>
-        <ul>
-            <li>Employee ID, full name, department, contractual monthly target hours.</li>
-            <li>Daily working hours: start, end, break, calculated net hours.</li>
-            <li>HR action audit log (views, acknowledgements, reminders, exports).</li>
-        </ul>
-
-        <h5>Purpose</h5>
-        <p>To fulfil the employer's legal obligation to document working time under German labour law
-            and to provide employees with transparency over their own working time records.</p>
-
-        <h5>Access</h5>
-        <ul>
-            <li>Employees can see and edit only their own time records.</li>
-            <li>HR staff can view aggregated and per-employee time records for payroll review.</li>
-        </ul>
-
-        <h5>Retention</h5>
-        <p>Time records are retained for the statutory period and then deleted. Employees may request
-            erasure of records no longer legally required.</p>
-
-        <h5>Security</h5>
-        <ul>
-            <li>Session timeout: 30 minutes of inactivity.</li>
-            <li>Role-based access control enforced server-side.</li>
-            <li>All HR access is audit-logged.</li>
-        </ul>
-    </div>
+<div class="card shadow-sm mx-auto" style="max-width:720px;">
+  <div class="card-body">
+    <h3 data-en="Privacy notice" data-de="Datenschutzerklärung">Privacy notice</h3>
+    <p class="text-muted" data-en="How FitLife Studio handles your data under GDPR." data-de="Wie FitLife Studio Ihre Daten gemäß DSGVO verarbeitet.">How FitLife Studio handles your data under GDPR.</p>
+    <ul>
+      <li data-en="Only work-related time data is collected (no GPS, no biometrics)." data-de="Es werden nur arbeitsbezogene Zeitdaten erfasst (kein GPS, keine Biometrie).">Only work-related time data is collected (no GPS, no biometrics).</li>
+      <li data-en="Employees can only view and correct their own entries." data-de="Mitarbeiter können nur ihre eigenen Einträge einsehen und korrigieren.">Employees can only view and correct their own entries.</li>
+      <li data-en="HR actions (viewing, acknowledging, exporting) are logged." data-de="HR-Aktionen (Einsicht, Bestätigung, Export) werden protokolliert.">HR actions (viewing, acknowledging, exporting) are logged.</li>
+      <li data-en="Data stored locally on the server. No third-party processing." data-de="Daten werden lokal auf dem Server gespeichert. Keine Verarbeitung durch Dritte.">Data stored locally on the server. No third-party processing.</li>
+      <li data-en="Session timeout: 30 minutes of inactivity." data-de="Sitzungszeitlimit: 30 Minuten Inaktivität.">Session timeout: 30 minutes of inactivity.</li>
+    </ul>
+    <a href="{% url 'home' %}" class="btn btn-outline-secondary" data-en="Back" data-de="Zurück">Back</a>
+  </div>
 </div>
 {% endblock %}

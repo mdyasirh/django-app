@@ -1,4 +1,4 @@
-"""Seed demo data for the FitLife Time Tracker."""
+"""Seed demo data — 5 employees + 1 HR + previous-month time records."""
 from datetime import date, time, timedelta
 from decimal import Decimal
 
@@ -6,154 +6,113 @@ from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from timetracking.models import Employee, TimeEntry
-
-
-DEMO_PASSWORD = "fitlife2026"
+from timetracking.models import DailyTimeRecord, Employee
 
 
 EMPLOYEES = [
-    {
-        "username": "lisa.schmidt",
-        "first_name": "Lisa",
-        "last_name": "Schmidt",
-        "email": "lisa.schmidt@fitlife.de",
-        "department": "Training",
-        "target_hours": Decimal("80.00"),
-        "role": "employee",
-    },
-    {
-        "username": "tom.fischer",
-        "first_name": "Tom",
-        "last_name": "Fischer",
-        "email": "tom.fischer@fitlife.de",
-        "department": "Training",
-        "target_hours": Decimal("160.00"),
-        "role": "employee",
-    },
-    {
-        "username": "klara.neumann",
-        "first_name": "Klara",
-        "last_name": "Neumann",
-        "email": "klara.neumann@fitlife.de",
-        "department": "Reception",
-        "target_hours": Decimal("160.00"),
-        "role": "employee",
-    },
-    {
-        "username": "julia.braun",
-        "first_name": "Julia",
-        "last_name": "Braun",
-        "email": "julia.braun@fitlife.de",
-        "department": "HR",
-        "target_hours": Decimal("160.00"),
-        "role": "hr",
-    },
+    ("lisa", "Lisa", "Schmidt", "Training", "1234"),
+    ("tom", "Tom", "Fischer", "Training", "1234"),
+    ("klara", "Klara", "Neumann", "Reception", "1234"),
+    ("max", "Max", "Weber", "Training", "1234"),
+    ("anna", "Anna", "Müller", "Reception", "1234"),
 ]
 
 
 class Command(BaseCommand):
-    help = "Seed demo employees, HR user and sample time entries."
+    help = "Create demo users and previous-month time records."
 
     def handle(self, *args, **options):
-        self.stdout.write("Seeding demo data…")
+        # HR user
+        hr_user, _ = User.objects.get_or_create(
+            username="hr",
+            defaults={"first_name": "Julia", "last_name": "Braun",
+                       "email": "hr@fitlife.de", "is_staff": True},
+        )
+        hr_user.set_password("admin123")
+        hr_user.save()
+        Employee.objects.update_or_create(
+            user=hr_user,
+            defaults={"department": "HR", "role": "hr", "pin": "0000",
+                       "target_hours": Decimal("160.00")},
+        )
 
-        created_users = 0
-        for data in EMPLOYEES:
-            user, user_created = User.objects.get_or_create(
-                username=data["username"],
-                defaults={
-                    "first_name": data["first_name"],
-                    "last_name": data["last_name"],
-                    "email": data["email"],
-                },
-            )
-            if user_created:
-                user.set_password(DEMO_PASSWORD)
-                user.save()
-                created_users += 1
-            else:
-                # always reset demo password so it is predictable
-                user.set_password(DEMO_PASSWORD)
-                user.first_name = data["first_name"]
-                user.last_name = data["last_name"]
-                user.email = data["email"]
-                user.save()
-
-            Employee.objects.update_or_create(
-                user=user,
-                defaults={
-                    "department": data["department"],
-                    "target_hours": data["target_hours"],
-                    "role": data["role"],
-                    "gdpr_consent": True,
-                    "consent_date": timezone.now(),
-                },
-            )
-
-        # Also create a superuser for /admin if one doesn't exist
+        # Admin
         if not User.objects.filter(username="admin").exists():
-            User.objects.create_superuser(
-                "admin", "admin@fitlife.de", DEMO_PASSWORD
+            User.objects.create_superuser("admin", "admin@fitlife.de", "admin123")
+
+        emps = {}
+        for uname, first, last, dept, pin in EMPLOYEES:
+            u, _ = User.objects.get_or_create(
+                username=uname,
+                defaults={"first_name": first, "last_name": last,
+                           "email": f"{uname}@fitlife.de"},
             )
+            u.set_password(pin)
+            u.save()
+            emp, _ = Employee.objects.update_or_create(
+                user=u,
+                defaults={"department": dept, "role": "employee",
+                           "pin": pin, "target_hours": Decimal("160.00")},
+            )
+            emps[uname] = emp
 
-        # Build sample time entries for the last ~5 weeks (covers previous + current month)
+        # Previous month
         today = timezone.localdate()
-        start = today - timedelta(days=35)
+        first_this = today.replace(day=1)
+        last_prev = first_this - timedelta(days=1)
+        first_prev = last_prev.replace(day=1)
 
-        patterns = {
-            "lisa.schmidt": {
-                "weekdays": [0, 1, 2, 3],  # Mon–Thu, part-time
-                "start": time(9, 0),
-                "end": time(14, 0),
-                "break_min": 30,
-            },
-            "tom.fischer": {
-                # full time but with GAPS to create a deficit
-                "weekdays": [0, 2, 4],
-                "start": time(8, 0),
-                "end": time(16, 0),
-                "break_min": 45,
-            },
-            "klara.neumann": {
-                # full schedule with overtime to demonstrate surplus
-                "weekdays": [0, 1, 2, 3, 4],
-                "start": time(8, 30),
-                "end": time(18, 30),
-                "break_min": 45,
-            },
-        }
-
-        # wipe old demo entries to keep the seed idempotent
-        TimeEntry.objects.filter(
-            employee__user__username__in=list(patterns.keys())
+        DailyTimeRecord.objects.filter(
+            date__gte=first_prev, date__lte=last_prev
         ).delete()
 
-        total_entries = 0
-        for username, cfg in patterns.items():
-            emp = Employee.objects.get(user__username=username)
-            d = start
-            while d <= today:
-                if d.weekday() in cfg["weekdays"]:
-                    TimeEntry.objects.update_or_create(
-                        employee=emp,
-                        date=d,
-                        defaults={
-                            "start_time": cfg["start"],
-                            "end_time": cfg["end"],
-                            "break_duration": timedelta(minutes=cfg["break_min"]),
-                        },
+        def mk(emp, d, ci, co, bs=None, be=None, status="clocked_out"):
+            DailyTimeRecord.objects.create(
+                employee=emp, date=d, clock_in=ci, clock_out=co,
+                break_start=bs, break_end=be, status=status,
+            )
+
+        d = first_prev
+        tom_skip = 0
+        weekday_n = 0
+        while d <= last_prev:
+            if d.weekday() < 5:  # weekday
+                weekday_n += 1
+
+                # Lisa — on target, one incomplete day (day 8)
+                if weekday_n == 8:
+                    DailyTimeRecord.objects.create(
+                        employee=emps["lisa"], date=d,
+                        clock_in=time(9, 0), status="incomplete",
                     )
-                    total_entries += 1
-                d += timedelta(days=1)
+                else:
+                    mk(emps["lisa"], d, time(9, 0), time(17, 0),
+                       time(12, 0), time(12, 30))
+
+                # Tom — deficit (2 missing days)
+                if weekday_n in (3, 12):
+                    tom_skip += 1
+                    # no entry at all
+                else:
+                    mk(emps["tom"], d, time(9, 0), time(16, 0),
+                       time(12, 0), time(12, 30))
+
+                # Klara — overtime
+                mk(emps["klara"], d, time(8, 0), time(18, 30),
+                   time(12, 0), time(12, 30))
+
+                # Max — normal
+                mk(emps["max"], d, time(9, 0), time(17, 30),
+                   time(12, 0), time(12, 30))
+
+                # Anna — normal
+                mk(emps["anna"], d, time(10, 0), time(18, 0),
+                   time(13, 0), time(13, 30))
+
+            d += timedelta(days=1)
 
         self.stdout.write(self.style.SUCCESS(
-            f"Done. Employees: {len(EMPLOYEES)} (new users: {created_users}), "
-            f"time entries seeded: {total_entries}."
+            f"Seeded {len(emps)} employees + HR + {weekday_n} days of records."
         ))
-        self.stdout.write(self.style.SUCCESS(
-            f"\nDemo logins (password: {DEMO_PASSWORD}):"
-        ))
-        for data in EMPLOYEES:
-            self.stdout.write(f"  {data['role']:>8}  {data['username']}")
-        self.stdout.write("     admin  admin")
+        self.stdout.write("Employee login: lisa / tom / klara / max / anna  PIN 1234")
+        self.stdout.write("HR login: hr / admin123")
