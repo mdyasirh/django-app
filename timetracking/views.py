@@ -13,7 +13,7 @@ from django.views.decorators.http import require_POST
 from .models import CorrectionRequest, DailyTimeRecord, Employee, HRReview
 
 
-# ── helpers ──────────────────────────────────────────────────────────────
+# ── helpers ──────────────────────────────────────────────────────────────────────
 
 def _emp(user):
     return getattr(user, "employee", None)
@@ -46,7 +46,7 @@ def _now():
     return timezone.localtime().time().replace(microsecond=0)
 
 
-# ── auth / routing ───────────────────────────────────────────────────────
+# ── auth / routing ───────────────────────────────────────────────────────────────
 
 @login_required
 def home(request):
@@ -55,7 +55,7 @@ def home(request):
     return redirect("employee_dashboard")
 
 
-# ── employee punch-clock ─────────────────────────────────────────────────
+# ── employee punch-clock ─────────────────────────────────────────────────────────
 
 @login_required
 def employee_dashboard(request):
@@ -211,7 +211,7 @@ def dismiss_reminder(request, review_id):
     return redirect("employee_dashboard")
 
 
-# ── HR dashboard ─────────────────────────────────────────────────────────
+# ── HR dashboard ─────────────────────────────────────────────────────────────────
 
 @login_required
 def hr_dashboard(request):

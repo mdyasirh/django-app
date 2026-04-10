@@ -14,7 +14,7 @@ EMPLOYEES = [
     ("tom", "Tom", "Fischer", "Training", "1234"),
     ("klara", "Klara", "Neumann", "Reception", "1234"),
     ("max", "Max", "Weber", "Training", "1234"),
-    ("anna", "Anna", "Müller", "Reception", "1234"),
+    ("anna", "Anna", "M\u00fcller", "Reception", "1234"),
 ]
 
 
