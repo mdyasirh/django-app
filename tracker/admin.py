@@ -4,7 +4,7 @@ from .models import EmployeeProfile, DailyTimeRecord, CorrectionRequest, HRRevie
 
 @admin.register(EmployeeProfile)
 class EmployeeProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "pin", "department", "target_hours_per_month")
+    list_display = ("user", "department", "target_hours_per_month")
 
 
 @admin.register(DailyTimeRecord)

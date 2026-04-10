@@ -132,7 +132,7 @@ def api_break_end(request):
         return JsonResponse({"ok": False, "error": "Not on break."})
     if record.break_start:
         elapsed = (_now() - record.break_start).total_seconds() / 60.0
-        record.total_break_minutes += int(elapsed)
+        record.total_break_minutes += round(elapsed)
     record.break_start = None
     record.status = "WORKING"
     record.save()
@@ -149,7 +149,7 @@ def api_punch_out(request):
     # End break if still on break
     if record.status == "ON_BREAK" and record.break_start:
         elapsed = (_now() - record.break_start).total_seconds() / 60.0
-        record.total_break_minutes += int(elapsed)
+        record.total_break_minutes += round(elapsed)
         record.break_start = None
     record.clock_out = _now()
     record.status = "CLOCKED_OUT"
@@ -175,10 +175,14 @@ def api_submit_correction(request):
         record = DailyTimeRecord.objects.get(id=record_id, employee=profile)
     except DailyTimeRecord.DoesNotExist:
         return JsonResponse({"ok": False, "error": "Record not found."})
-    hour, minute = proposed_time.split(":")
+    try:
+        hour, minute = proposed_time.split(":")
+        parsed_time = datetime.time(int(hour), int(minute))
+    except (ValueError, TypeError):
+        return JsonResponse({"ok": False, "error": "Invalid time format. Use HH:MM."})
     CorrectionRequest.objects.create(
         record=record,
-        proposed_out_time=datetime.time(int(hour), int(minute)),
+        proposed_out_time=parsed_time,
     )
     return JsonResponse({"ok": True})
 

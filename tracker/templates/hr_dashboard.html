@@ -7,12 +7,15 @@
       <h2 data-en="HR Dashboard" data-de="HR-Übersicht">HR Dashboard</h2>
       <div class="d-flex gap-2 align-items-center">
         <label class="form-label mb-0 me-1" data-en="Month:" data-de="Monat:">Month:</label>
-        <select id="monthSelect" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto"
-                onchange="location.href='?month='+this.value+'&year={{ year }}'">
-          {% for m in "xxxxxxxxxxxx" %}
-            <option value="{{ forloop.counter }}" {% if forloop.counter == month %}selected{% endif %}>{{ forloop.counter }}</option>
-          {% endfor %}
-        </select>
+        <form id="monthForm" method="get" class="d-inline">
+          <input type="hidden" name="year" value="{{ year }}">
+          <select name="month" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto"
+                  onchange="this.form.submit()">
+            {% for m in "xxxxxxxxxxxx" %}
+              <option value="{{ forloop.counter }}" {% if forloop.counter == month %}selected{% endif %}>{{ forloop.counter }}</option>
+            {% endfor %}
+          </select>
+        </form>
         <a href="{% url 'csv_export' %}?month={{ month }}&year={{ year }}" class="btn btn-sm btn-outline-info"
            data-en="⬇ CSV Export" data-de="⬇ CSV-Export">⬇ CSV Export</a>
       </div>
