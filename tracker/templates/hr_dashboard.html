@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2 data-en="HR Dashboard" data-de="HR-Übersicht">HR Dashboard</h2>
+      <div class="d-flex gap-2 align-items-center">
+        <label class="form-label mb-0 me-1" data-en="Month:" data-de="Monat:">Month:</label>
+        <select id="monthSelect" class="form-select form-select-sm bg-dark text-light border-secondary" style="width:auto"
+                onchange="location.href='?month='+this.value+'&year={{ year }}'">
+          {% for m in "xxxxxxxxxxxx" %}
+            <option value="{{ forloop.counter }}" {% if forloop.counter == month %}selected{% endif %}>{{ forloop.counter }}</option>
+          {% endfor %}
+        </select>
+        <a href="{% url 'csv_export' %}?month={{ month }}&year={{ year }}" class="btn btn-sm btn-outline-info"
+           data-en="⬇ CSV Export" data-de="⬇ CSV-Export">⬇ CSV Export</a>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-dark table-hover align-middle">
+        <thead>
+          <tr>
+            <th></th>
+            <th data-en="Name" data-de="Name">Name</th>
+            <th data-en="Department" data-de="Abteilung">Department</th>
+            <th data-en="Target (h)" data-de="Soll (Std.)">Target (h)</th>
+            <th data-en="Actual (h)" data-de="Ist (Std.)">Actual (h)</th>
+            <th data-en="Diff (h)" data-de="Diff (Std.)">Diff (h)</th>
+            <th data-en="Review" data-de="Prüfung">Review</th>
+            <th data-en="Actions" data-de="Aktionen">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in data %}
+          <tr data-bs-toggle="collapse" data-bs-target="#detail-{{ item.employee.id }}" style="cursor:pointer"
+              class="{% if item.delta < -5 %}bg-danger text-white{% elif item.delta > 5 %}bg-warning text-dark{% endif %}">
+            <td><span class="text-muted">▶</span></td>
+            <td>{{ item.employee.user.get_full_name }}</td>
+            <td>{{ item.employee.department }}</td>
+            <td>{{ item.target }}</td>
+            <td>{{ item.actual }}</td>
+            <td>
+              {% if item.delta >= 0 %}+{% endif %}{{ item.delta }}
+            </td>
+            <td>
+              <span id="reviewBadge-{{ item.review.id }}" class="badge
+                {% if item.review.status == 'REVIEWED' %}bg-success
+                {% elif item.review.status == 'REMINDER_SENT' %}bg-info
+                {% else %}bg-secondary{% endif %}">
+                {{ item.review.status }}
+              </span>
+            </td>
+            <td>
+              <button class="btn btn-sm btn-outline-warning me-1"
+                      onclick="event.stopPropagation(); showReminderModal({{ item.review.id }}, '{{ item.employee.user.get_full_name }}')"
+                      data-en="Send Reminder" data-de="Erinnerung senden">Send Reminder</button>
+              <button class="btn btn-sm btn-outline-success"
+                      onclick="event.stopPropagation(); doAcknowledge({{ item.review.id }})"
+                      data-en="Acknowledge" data-de="Bestätigen">Acknowledge</button>
+            </td>
+          </tr>
+          <!-- Expandable detail row -->
+          <tr class="collapse" id="detail-{{ item.employee.id }}">
+            <td colspan="8" class="p-0">
+              <div class="p-3" style="background-color:#0d1b2a">
+                <table class="table table-sm table-dark mb-0">
+                  <thead>
+                    <tr>
+                      <th data-en="Date" data-de="Datum">Date</th>
+                      <th data-en="Clock-in" data-de="Einstempeln">Clock-in</th>
+                      <th data-en="Clock-out" data-de="Ausstempeln">Clock-out</th>
+                      <th data-en="Break (min)" data-de="Pause (min)">Break (min)</th>
+                      <th data-en="Net Hours" data-de="Netto-Std.">Net Hours</th>
+                      <th data-en="Status" data-de="Status">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in item.records %}
+                    <tr>
+                      <td>{{ r.date|date:"D d.m.Y" }}</td>
+                      <td>{{ r.clock_in|date:"H:i"|default:"-" }}</td>
+                      <td>{{ r.clock_out|date:"H:i"|default:"-" }}</td>
+                      <td>{{ r.total_break_minutes }}</td>
+                      <td>{{ r.net_hours }}</td>
+                      <td>
+                        {% if r.status == "MISSING_CLOCKOUT" %}
+                          <span class="text-danger fw-bold" data-en="No clock-out" data-de="Kein Ausstempeln">No clock-out</span>
+                        {% elif r.status == "CLOCKED_OUT" %}
+                          <span class="text-success">✓</span>
+                        {% else %}
+                          {{ r.get_status_display }}
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                      <td colspan="6" class="text-center">
+                        <span class="text-danger" data-en="No entry" data-de="Kein Eintrag">No entry</span>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Reminder Modal -->
+<div class="modal fade" id="reminderModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" data-en="Send Reminder" data-de="Erinnerung senden">Send Reminder</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="reminderReviewId">
+        <p data-en="Send a reminder email to:" data-de="Erinnerung senden an:">Send a reminder email to:</p>
+        <p class="fw-bold" id="reminderName"></p>
+        <div class="mb-3">
+          <label class="form-label" data-en="Message (optional)" data-de="Nachricht (optional)">Message (optional)</label>
+          <textarea class="form-control bg-dark text-light border-secondary" rows="3"
+                    placeholder="Please review your hours..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" data-en="Cancel" data-de="Abbrechen">Cancel</button>
+        <button class="btn btn-warning" onclick="doSendReminder()" data-en="Send" data-de="Senden">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const csrfToken = '{{ csrf_token }}';
+
+  function showReminderModal(reviewId, name) {
+    document.getElementById('reminderReviewId').value = reviewId;
+    document.getElementById('reminderName').textContent = name;
+    new bootstrap.Modal(document.getElementById('reminderModal')).show();
+  }
+
+  function doSendReminder() {
+    const fd = new FormData();
+    fd.append('review_id', document.getElementById('reminderReviewId').value);
+    fetch('/api/send-reminder/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: fd,
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('reminderModal')).hide();
+        const badge = document.getElementById('reviewBadge-' + document.getElementById('reminderReviewId').value);
+        if (badge) { badge.className = 'badge bg-info'; badge.textContent = 'REMINDER_SENT'; }
+      }
+    });
+  }
+
+  function doAcknowledge(reviewId) {
+    const fd = new FormData();
+    fd.append('review_id', reviewId);
+    fetch('/api/acknowledge/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: fd,
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        const badge = document.getElementById('reviewBadge-' + reviewId);
+        if (badge) { badge.className = 'badge bg-success'; badge.textContent = 'REVIEWED'; }
+      }
+    });
+  }
+</script>
+{% endblock %}

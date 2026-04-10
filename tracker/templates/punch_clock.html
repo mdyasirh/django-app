@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <h2 class="mb-4 text-center">
+      <span data-en="Punch Clock" data-de="Stempeluhr">Punch Clock</span>
+      – {{ profile.user.get_full_name }}
+    </h2>
+
+    <!-- Status badge -->
+    <div class="text-center mb-4">
+      <span id="statusBadge" class="badge fs-5 pulse"></span>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="d-flex justify-content-center gap-3 mb-4" id="actionBtns">
+      <button id="btnStart" class="btn btn-success btn-lg px-5 d-none" onclick="doPunch('punch-in')"
+              data-en="▶ Start" data-de="▶ Starten">▶ Start</button>
+      <button id="btnBreak" class="btn btn-warning btn-lg px-4 d-none" onclick="doPunch('break-start')"
+              data-en="☕ Break" data-de="☕ Pause">☕ Break</button>
+      <button id="btnResume" class="btn btn-primary btn-lg px-4 d-none" onclick="doPunch('break-end')"
+              data-en="↩ Resume" data-de="↩ Weiter">↩ Resume</button>
+      <button id="btnStop" class="btn btn-danger btn-lg px-4 d-none" onclick="doPunch('punch-out')"
+              data-en="⏹ Stop" data-de="⏹ Stopp">⏹ Stop</button>
+    </div>
+
+    <!-- Summary card (shown after clock-out) -->
+    <div id="summaryCard" class="card p-4 text-center d-none mb-4">
+      <h4 data-en="Day Complete!" data-de="Tag abgeschlossen!">Day Complete!</h4>
+      <p class="fs-3 fw-bold text-info" id="netHoursDisplay">0.0 h</p>
+      <p class="text-muted" data-en="Net working hours" data-de="Netto-Arbeitszeit">Net working hours</p>
+    </div>
+
+    <!-- Weekly overview -->
+    <div class="card p-3">
+      <h5 data-en="Weekly Overview" data-de="Wochenübersicht">Weekly Overview</h5>
+      <div class="table-responsive">
+        <table class="table table-dark table-striped table-sm">
+          <thead>
+            <tr>
+              <th data-en="Date" data-de="Datum">Date</th>
+              <th data-en="Clock-in" data-de="Einstempeln">Clock-in</th>
+              <th data-en="Clock-out" data-de="Ausstempeln">Clock-out</th>
+              <th data-en="Break" data-de="Pause">Break</th>
+              <th data-en="Net Hours" data-de="Netto-Std.">Net Hours</th>
+              <th data-en="Status" data-de="Status">Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in weekly_records %}
+            <tr>
+              <td>{{ r.date|date:"D d.m" }}</td>
+              <td>{{ r.clock_in|date:"H:i"|default:"-" }}</td>
+              <td>{{ r.clock_out|date:"H:i"|default:"-" }}</td>
+              <td>{{ r.total_break_minutes }} min</td>
+              <td>{{ r.net_hours }} h</td>
+              <td>
+                {% if r.status == "MISSING_CLOCKOUT" %}
+                  <span class="badge bg-danger" data-en="No clock-out" data-de="Kein Ausstempeln">No clock-out</span>
+                {% elif r.status == "CLOCKED_OUT" %}
+                  <span class="badge bg-success">✓</span>
+                {% elif r.status == "WORKING" %}
+                  <span class="badge bg-info" data-en="Working" data-de="Arbeitet">Working</span>
+                {% elif r.status == "ON_BREAK" %}
+                  <span class="badge bg-warning text-dark" data-en="On Break" data-de="In Pause">On Break</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.status == "MISSING_CLOCKOUT" %}
+                  <button class="btn btn-sm btn-outline-warning"
+                          onclick="showCorrectionModal({{ r.id }})"
+                          data-en="Submit correction" data-de="Korrektur einreichen">Submit correction</button>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="text-center text-muted" data-en="No records yet" data-de="Noch keine Einträge">No records yet</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Correction Modal -->
+<div class="modal fade" id="correctionModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" data-en="Submit Correction" data-de="Korrektur einreichen">Submit Correction</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="corrRecordId">
+        <label class="form-label" data-en="Proposed clock-out time" data-de="Vorgeschlagene Ausstempelzeit">Proposed clock-out time</label>
+        <input type="time" id="corrTime" class="form-control bg-dark text-light border-secondary" value="17:00">
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" data-en="Cancel" data-de="Abbrechen">Cancel</button>
+        <button class="btn btn-primary" onclick="submitCorrection()" data-en="Submit" data-de="Absenden">Submit</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const csrfToken = '{{ csrf_token }}';
+
+  // ── State machine ──────────────────────────────────────────────
+  function updateUI(data) {
+    const badge = document.getElementById('statusBadge');
+    const btnStart  = document.getElementById('btnStart');
+    const btnBreak  = document.getElementById('btnBreak');
+    const btnResume = document.getElementById('btnResume');
+    const btnStop   = document.getElementById('btnStop');
+    const summary   = document.getElementById('summaryCard');
+
+    // Hide all
+    [btnStart, btnBreak, btnResume, btnStop].forEach(b => b.classList.add('d-none'));
+    summary.classList.add('d-none');
+
+    const lang = localStorage.getItem('lang') || 'en';
+
+    if (!data.clock_in) {
+      badge.className = 'badge fs-5 bg-secondary';
+      badge.textContent = lang === 'de' ? 'Nicht eingestempelt' : 'Not clocked in';
+      btnStart.classList.remove('d-none');
+    } else if (data.status === 'WORKING') {
+      badge.className = 'badge fs-5 bg-success pulse';
+      badge.textContent = lang === 'de' ? '● Arbeitet gerade' : '● Currently working';
+      btnBreak.classList.remove('d-none');
+      btnStop.classList.remove('d-none');
+    } else if (data.status === 'ON_BREAK') {
+      badge.className = 'badge fs-5 bg-warning text-dark pulse';
+      badge.textContent = lang === 'de' ? '● In Pause' : '● On Break';
+      btnResume.classList.remove('d-none');
+    } else if (data.status === 'CLOCKED_OUT') {
+      badge.className = 'badge fs-5 bg-info';
+      badge.textContent = lang === 'de' ? 'Ausgestempelt' : 'Clocked Out';
+      summary.classList.remove('d-none');
+      document.getElementById('netHoursDisplay').textContent = data.net_hours + ' h';
+    }
+
+    // Re-apply language
+    applyLang();
+  }
+
+  function fetchStatus() {
+    fetch('/api/status/')
+      .then(r => r.json())
+      .then(updateUI);
+  }
+
+  function doPunch(action) {
+    fetch('/api/' + action + '/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) fetchStatus();
+      else alert(data.error);
+    });
+  }
+
+  // ── Correction ─────────────────────────────────────────────────
+  function showCorrectionModal(recordId) {
+    document.getElementById('corrRecordId').value = recordId;
+    new bootstrap.Modal(document.getElementById('correctionModal')).show();
+  }
+
+  function submitCorrection() {
+    const fd = new FormData();
+    fd.append('record_id', document.getElementById('corrRecordId').value);
+    fd.append('proposed_time', document.getElementById('corrTime').value);
+    fetch('/api/submit-correction/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: fd,
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('correctionModal')).hide();
+        location.reload();
+      } else {
+        alert(data.error);
+      }
+    });
+  }
+
+  // Init
+  fetchStatus();
+</script>
+{% endblock %}

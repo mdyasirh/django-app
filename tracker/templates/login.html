@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-5 col-lg-4">
+    <div class="card p-4 text-center">
+      <h3 class="mb-3" data-en="Employee Login" data-de="Mitarbeiter-Login">Employee Login</h3>
+
+      {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" id="loginForm">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label" data-en="Username" data-de="Benutzername">Username</label>
+          <input type="text" name="username" class="form-control bg-dark text-light border-secondary"
+                 placeholder="e.g. lisa" required autofocus>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" data-en="PIN" data-de="PIN">PIN</label>
+          <input type="password" name="pin" id="pinField" class="form-control bg-dark text-light border-secondary text-center fs-3 tracking-widest"
+                 maxlength="4" readonly>
+        </div>
+
+        <!-- Numeric keypad -->
+        <div class="d-flex flex-wrap justify-content-center mb-3" id="keypad">
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('1')">1</button>
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('2')">2</button>
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('3')">3</button>
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('4')">4</button>
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('5')">5</button>
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('6')">6</button>
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('7')">7</button>
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('8')">8</button>
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('9')">9</button>
+          <button type="button" class="btn btn-outline-warning btn-keypad" onclick="clearPin()">⌫</button>
+          <button type="button" class="btn btn-outline-light btn-keypad" onclick="addDigit('0')">0</button>
+          <button type="submit" class="btn btn-success btn-keypad">✓</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function addDigit(d) {
+    const f = document.getElementById('pinField');
+    if (f.value.length < 4) f.value += d;
+  }
+  function clearPin() {
+    const f = document.getElementById('pinField');
+    f.value = f.value.slice(0, -1);
+  }
+</script>
+{% endblock %}
